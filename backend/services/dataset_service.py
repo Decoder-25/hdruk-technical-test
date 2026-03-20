@@ -5,9 +5,7 @@ Responsible for:
   1. Fetching raw dataset metadata from the upstream HDR UK JSON source.
   2. Normalising / extracting only the four required fields (FAIR-aligned).
   3. Providing a small in-memory cache so we don't hammer the upstream URL.
-  4. Applying search filtering and pagination before returning results.
-
-All business logic lives here; the router only handles HTTP concerns.
+  4. Applying search filtering, sorting, and pagination before returning results.
 """
 
 from __future__ import annotations
@@ -23,20 +21,10 @@ from models.dataset import DatasetSummary, DatasetListResponse, PaginationMeta
 
 logger = logging.getLogger(__name__)
 
-# Simple in-process cache: (data, etag). None until first fetch.
 _cache: tuple[list[DatasetSummary], Optional[str]] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-
 def _extract_nested(raw: dict, *keys: str) -> Optional[str]:
-    """
-    Safely traverse a nested dict using a sequence of keys.
-    Returns the string value or None if any key is missing.
-    """
     node = raw
     for key in keys:
         if not isinstance(node, dict):
@@ -46,15 +34,6 @@ def _extract_nested(raw: dict, *keys: str) -> Optional[str]:
 
 
 def _parse_dataset(raw: dict) -> Optional[DatasetSummary]:
-    """
-    Map one raw JSON record to a DatasetSummary.
-
-    Confirmed field paths from the actual HDR UK dataset JSON:
-      title                 -> raw["metadata"]["summary"]["title"]
-      description           -> raw["metadata"]["summary"]["description"]
-      accessServiceCategory -> raw["metadata"]["accessibility"]["access"]["accessServiceCategory"]
-      accessRights          -> raw["metadata"]["accessibility"]["access"]["accessRights"]
-    """
     title = _extract_nested(raw, "metadata", "summary", "title")
     if not title:
         logger.warning("Skipping record with no title: %s", raw.get("id", "<unknown>"))
@@ -76,16 +55,7 @@ def _parse_dataset(raw: dict) -> Optional[DatasetSummary]:
     )
 
 
-# ---------------------------------------------------------------------------
-# Private: fetch and cache the full dataset list from upstream
-# ---------------------------------------------------------------------------
-
-
 async def _get_all_datasets() -> list[DatasetSummary]:
-    """
-    Fetches and caches all datasets from upstream.
-    Uses ETag-based conditional GET to avoid redundant downloads.
-    """
     global _cache
 
     headers: dict[str, str] = {}
@@ -130,23 +100,21 @@ async def _get_all_datasets() -> list[DatasetSummary]:
     return datasets
 
 
-# ---------------------------------------------------------------------------
-# Public service functions
-# ---------------------------------------------------------------------------
-
-
 async def fetch_all_datasets(
     page: int = 1,
     page_size: int = 10,
     search: Optional[str] = None,
+    sort: Optional[str] = None,
 ) -> DatasetListResponse:
     """
-    Returns a paginated, optionally filtered list of datasets.
+    Returns a paginated, optionally filtered and sorted list of datasets.
 
     Args:
         page:      1-indexed page number.
         page_size: Number of items per page (max 100).
         search:    Optional case-insensitive substring filter on title.
+        sort:      Sort direction — 'asc' or 'desc' (alphabetical by title).
+                   Omit for default (original) order.
     """
     all_datasets = await _get_all_datasets()
 
@@ -155,16 +123,18 @@ async def fetch_all_datasets(
         search_lower = search.lower()
         all_datasets = [d for d in all_datasets if search_lower in d.title.lower()]
 
-    # Pagination calculations
+    # Apply alphabetical sort by title
+    if sort == "asc":
+        all_datasets = sorted(all_datasets, key=lambda d: d.title.lower())
+    elif sort == "desc":
+        all_datasets = sorted(all_datasets, key=lambda d: d.title.lower(), reverse=True)
+
+    # Pagination
     total = len(all_datasets)
     total_pages = max(1, math.ceil(total / page_size))
-
-    # Clamp page to valid range
     page = max(1, min(page, total_pages))
-
     start = (page - 1) * page_size
     end = start + page_size
-    page_datasets = all_datasets[start:end]
 
     return DatasetListResponse(
         pagination=PaginationMeta(
@@ -173,11 +143,10 @@ async def fetch_all_datasets(
             page_size=page_size,
             total_pages=total_pages,
         ),
-        datasets=page_datasets,
+        datasets=all_datasets[start:end],
     )
 
 
 def clear_cache() -> None:
-    """Invalidate the in-memory cache (useful for testing)."""
     global _cache
     _cache = None

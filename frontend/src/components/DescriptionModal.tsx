@@ -1,17 +1,16 @@
 import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Button,
   Typography,
   IconButton,
   Chip,
   Box,
-  Link,
+  Divider,
+  Button,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import LockOpenIcon from "@mui/icons-material/LockOpen";
 import type { Dataset } from "../types/dataset";
 
 interface DescriptionModalProps {
@@ -29,58 +28,89 @@ const DescriptionModal = ({ dataset, onClose }: DescriptionModalProps) => {
       maxWidth="md"
       fullWidth
       aria-labelledby="dataset-dialog-title"
+      PaperProps={{ sx: { borderRadius: 2, overflow: "hidden" } }}
     >
-      <DialogTitle id="dataset-dialog-title" sx={{ pr: 6 }}>
-        <Typography variant="h6" component="span">
+      {/* Coloured header band */}
+      <Box sx={{ bgcolor: "primary.main", px: 3, pt: 3, pb: 2.5, position: "relative" }}>
+        {dataset.accessServiceCategory && (
+          <Chip
+            label={dataset.accessServiceCategory}
+            size="small"
+            sx={{
+              mb: 1.5,
+              bgcolor: "rgba(255,255,255,0.15)",
+              color: "white",
+              fontWeight: 500,
+              fontSize: "0.7rem",
+              letterSpacing: "0.04em",
+            }}
+          />
+        )}
+
+        <Typography
+          id="dataset-dialog-title"
+          variant="h6"
+          sx={{ color: "white", fontWeight: 600, lineHeight: 1.3, pr: 5 }}
+        >
           {dataset.title}
         </Typography>
+
+        {/* X button — only close control */}
         <IconButton
           aria-label="close"
           onClick={onClose}
-          sx={{ position: "absolute", right: 12, top: 12, color: "grey.500" }}
+          sx={{
+            position: "absolute",
+            right: 12,
+            top: 12,
+            color: "rgba(255,255,255,0.7)",
+            "&:hover": { color: "white", bgcolor: "rgba(255,255,255,0.1)" },
+          }}
         >
-          <CloseIcon />
+          <CloseIcon fontSize="small" />
         </IconButton>
-      </DialogTitle>
+      </Box>
 
-      <DialogContent dividers>
-        {/* Access Service Category badge */}
-        {dataset.accessServiceCategory && (
-          <Box mb={2}>
-            <Chip
-              label={dataset.accessServiceCategory}
-              color="primary"
-              size="small"
-              variant="outlined"
-            />
-          </Box>
-        )}
-
-        {/* Full description */}
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {dataset.description ?? "No description available."}
+      <DialogContent sx={{ px: 3, py: 3 }}>
+        <Typography
+          variant="overline"
+          color="text.disabled"
+          sx={{ letterSpacing: "0.1em", fontSize: "0.7rem" }}
+        >
+          Description
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, lineHeight: 1.8 }}>
+          {dataset.description ?? "No description available for this dataset."}
         </Typography>
 
-        {/* Access rights link */}
         {dataset.accessRights && (
-          <Link
-            href={dataset.accessRights}
-            target="_blank"
-            rel="noopener noreferrer"
-            underline="hover"
-            sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: "0.875rem" }}
-          >
-            Apply for access
-            <OpenInNewIcon sx={{ fontSize: 14 }} />
-          </Link>
+          <>
+            <Divider sx={{ my: 2.5 }} />
+            <Typography
+              variant="overline"
+              color="text.disabled"
+              sx={{ letterSpacing: "0.1em", fontSize: "0.7rem" }}
+            >
+              Data Access
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                href={dataset.accessRights}
+                target="_blank"
+                rel="noopener noreferrer"
+                startIcon={<LockOpenIcon sx={{ fontSize: 15 }} />}
+                endIcon={<OpenInNewIcon sx={{ fontSize: 13 }} />}
+                sx={{ textTransform: "none", fontWeight: 600 }}
+              >
+                Apply for access
+              </Button>
+            </Box>
+          </>
         )}
       </DialogContent>
-
-      <DialogActions>
-        <Button onClick={onClose} variant="outlined">
-          Close
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 };
