@@ -1,6 +1,5 @@
 /**
  * Mirrors the DatasetSummary Pydantic model from the backend.
- * Field names use camelCase aliases as serialised by FastAPI.
  */
 export interface Dataset {
   title: string;
@@ -10,9 +9,19 @@ export interface Dataset {
 }
 
 /**
+ * Mirrors the PaginationMeta Pydantic model from the backend.
+ */
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+/**
  * Mirrors the DatasetListResponse Pydantic model from the backend.
  */
 export interface DatasetListResponse {
-  count: number;
+  pagination: PaginationMeta;
   datasets: Dataset[];
 }

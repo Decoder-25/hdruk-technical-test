@@ -6,6 +6,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   Paper,
   Typography,
   Link,
@@ -19,17 +20,33 @@ import {
 import SearchIcon from "@mui/icons-material/Search";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import useDatasets from "../hooks/useDatasets";
-import DescriptionModal from "../components/DescriptionModal";
+import DescriptionModal from "./DescriptionModal";
 import type { Dataset } from "../types/dataset";
 
 const DatasetTable = () => {
-  const { datasets, loading, error } = useDatasets();
-  const [search, setSearch] = useState("");
+  const {
+    datasets,
+    pagination,
+    loading,
+    error,
+    page,
+    pageSize,
+    search,
+    setPage,
+    setPageSize,
+    setSearch,
+  } = useDatasets();
+
   const [selectedDataset, setSelectedDataset] = useState<Dataset | null>(null);
 
-  const filtered = datasets.filter((d) =>
-    d.title.toLowerCase().includes(search.toLowerCase())
-  );
+  // MUI TablePagination is 0-indexed, our backend is 1-indexed
+  const handlePageChange = (_: unknown, newPage: number) => {
+    setPage(newPage + 1);
+  };
+
+  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setPageSize(parseInt(event.target.value, 10));
+  };
 
   return (
     <Box>
@@ -71,7 +88,7 @@ const DatasetTable = () => {
           <TableBody>
             {/* Loading skeletons */}
             {loading &&
-              Array.from({ length: 6 }).map((_, i) => (
+              Array.from({ length: pageSize }).map((_, i) => (
                 <TableRow key={i}>
                   <TableCell><Skeleton variant="text" width="80%" /></TableCell>
                   <TableCell><Skeleton variant="text" width="60%" /></TableCell>
@@ -81,7 +98,7 @@ const DatasetTable = () => {
 
             {/* Data rows */}
             {!loading &&
-              filtered.map((dataset, index) => (
+              datasets.map((dataset, index) => (
                 <TableRow key={index}>
                   {/* Clickable title — opens modal with full description */}
                   <TableCell>
@@ -109,9 +126,7 @@ const DatasetTable = () => {
                         variant="outlined"
                       />
                     ) : (
-                      <Typography variant="body2" color="text.disabled">
-                        —
-                      </Typography>
+                      <Typography variant="body2" color="text.disabled">—</Typography>
                     )}
                   </TableCell>
 
@@ -129,16 +144,14 @@ const DatasetTable = () => {
                         <OpenInNewIcon sx={{ fontSize: 13 }} />
                       </Link>
                     ) : (
-                      <Typography variant="body2" color="text.disabled">
-                        —
-                      </Typography>
+                      <Typography variant="body2" color="text.disabled">—</Typography>
                     )}
                   </TableCell>
                 </TableRow>
               ))}
 
             {/* Empty state */}
-            {!loading && filtered.length === 0 && !error && (
+            {!loading && datasets.length === 0 && !error && (
               <TableRow>
                 <TableCell colSpan={3} align="center" sx={{ py: 6 }}>
                   <Typography variant="body2" color="text.secondary">
@@ -149,14 +162,18 @@ const DatasetTable = () => {
             )}
           </TableBody>
         </Table>
-      </TableContainer>
 
-      {/* Result count */}
-      {!loading && !error && (
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-          Showing {filtered.length} of {datasets.length} datasets
-        </Typography>
-      )}
+        {/* MUI Pagination — 0-indexed so subtract 1 from backend's 1-indexed page */}
+        <TablePagination
+          component="div"
+          count={pagination?.total ?? 0}
+          page={page - 1}
+          onPageChange={handlePageChange}
+          rowsPerPage={pageSize}
+          onRowsPerPageChange={handleRowsPerPageChange}
+          rowsPerPageOptions={[5, 10, 25, 50]}
+        />
+      </TableContainer>
 
       {/* Description modal */}
       <DescriptionModal
