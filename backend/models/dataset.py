@@ -11,7 +11,7 @@ Fields are aligned with the HDR UK FAIR data principles:
 from __future__ import annotations
 
 from typing import Optional
-from pydantic import BaseModel, AnyHttpUrl, Field
+from pydantic import BaseModel, Field
 
 
 class DatasetSummary(BaseModel):
@@ -27,7 +27,7 @@ class DatasetSummary(BaseModel):
     )
     description: Optional[str] = Field(
         None,
-        description="Plain-text summary of what the dataset contains and its purpose.",
+        description="Plain-text summary from metadata.summary.description.",
         examples=["Longitudinal primary care records from UK GP practices."],
     )
     access_service_category: Optional[str] = Field(
@@ -47,7 +47,6 @@ class DatasetSummary(BaseModel):
     )
 
     model_config = {
-        # Allow both camelCase aliases and snake_case field names when parsing
         "populate_by_name": True,
         "json_schema_extra": {
             "examples": [
@@ -62,8 +61,17 @@ class DatasetSummary(BaseModel):
     }
 
 
-class DatasetListResponse(BaseModel):
-    """Wrapper returned by the list endpoint — FAIR-friendly envelope."""
+class PaginationMeta(BaseModel):
+    """Pagination metadata included in every paginated response."""
 
-    count: int = Field(..., description="Total number of datasets returned.")
-    datasets: list[DatasetSummary] = Field(..., description="Array of dataset summaries.")
+    total: int = Field(..., description="Total number of datasets matching the query.")
+    page: int = Field(..., description="Current page number (1-indexed).")
+    page_size: int = Field(..., description="Number of datasets per page.")
+    total_pages: int = Field(..., description="Total number of pages.")
+
+
+class DatasetListResponse(BaseModel):
+    """Paginated wrapper returned by the list endpoint."""
+
+    pagination: PaginationMeta
+    datasets: list[DatasetSummary] = Field(..., description="Array of dataset summaries for the current page.")
