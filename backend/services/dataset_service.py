@@ -5,6 +5,7 @@ Responsible for:
   1. Fetching raw dataset metadata from the upstream HDR UK JSON source.
   2. Normalising / extracting only the four required fields (FAIR-aligned).
   3. Providing a small in-memory cache so we don't hammer the upstream URL.
+  4. Applying search filtering and pagination before returning results.
 
 All business logic lives here; the router only handles HTTP concerns.
 """
@@ -12,16 +13,17 @@ All business logic lives here; the router only handles HTTP concerns.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 import httpx
 
 from config import settings
-from models.dataset import DatasetSummary, DatasetListResponse
+from models.dataset import DatasetSummary, DatasetListResponse, PaginationMeta
 
 logger = logging.getLogger(__name__)
 
-# Simple in-process cache: (data, etag).  None until first fetch.
+# Simple in-process cache: (data, etag). None until first fetch.
 _cache: tuple[list[DatasetSummary], Optional[str]] | None = None
 
 
@@ -34,9 +36,6 @@ def _extract_nested(raw: dict, *keys: str) -> Optional[str]:
     """
     Safely traverse a nested dict using a sequence of keys.
     Returns the string value or None if any key is missing.
-
-    Example:
-        _extract_nested(record, "metadata", "summary", "title")
     """
     node = raw
     for key in keys:
@@ -56,21 +55,15 @@ def _parse_dataset(raw: dict) -> Optional[DatasetSummary]:
       accessServiceCategory -> raw["metadata"]["accessibility"]["access"]["accessServiceCategory"]
       accessRights          -> raw["metadata"]["accessibility"]["access"]["accessRights"]
     """
-    # --- title ---
     title = _extract_nested(raw, "metadata", "summary", "title")
     if not title:
         logger.warning("Skipping record with no title: %s", raw.get("id", "<unknown>"))
         return None
 
-    # --- description ---
     description = _extract_nested(raw, "metadata", "summary", "description")
-
-    # --- accessServiceCategory ---
     access_service_category = _extract_nested(
         raw, "metadata", "accessibility", "access", "accessServiceCategory"
     )
-
-    # --- accessRights ---
     access_rights = _extract_nested(
         raw, "metadata", "accessibility", "access", "accessRights"
     )
@@ -84,17 +77,14 @@ def _parse_dataset(raw: dict) -> Optional[DatasetSummary]:
 
 
 # ---------------------------------------------------------------------------
-# Public service functions
+# Private: fetch and cache the full dataset list from upstream
 # ---------------------------------------------------------------------------
 
 
-async def fetch_all_datasets() -> DatasetListResponse:
+async def _get_all_datasets() -> list[DatasetSummary]:
     """
-    Fetch all datasets from the upstream source, apply field extraction,
-    and return a structured DatasetListResponse.
-
-    Uses a conditional GET (ETag) to avoid re-downloading unchanged data.
-    Raises httpx.HTTPStatusError on upstream HTTP errors.
+    Fetches and caches all datasets from upstream.
+    Uses ETag-based conditional GET to avoid redundant downloads.
     """
     global _cache
 
@@ -109,15 +99,13 @@ async def fetch_all_datasets() -> DatasetListResponse:
 
         if response.status_code == 304 and _cache is not None:
             logger.debug("Upstream returned 304 Not Modified — using cache.")
-            datasets, etag = _cache
-            return DatasetListResponse(count=len(datasets), datasets=datasets)
+            datasets, _ = _cache
+            return datasets
 
         response.raise_for_status()
-
         raw_data = response.json()
         etag = response.headers.get("etag")
 
-    # The upstream JSON is a top-level array of dataset records.
     if isinstance(raw_data, list):
         raw_list = raw_data
     elif isinstance(raw_data, dict):
@@ -139,9 +127,54 @@ async def fetch_all_datasets() -> DatasetListResponse:
 
     _cache = (datasets, etag)
     logger.info("Fetched %d datasets from upstream.", len(datasets))
+    return datasets
 
-    return DatasetListResponse(count=len(datasets), datasets=datasets)
 
+# ---------------------------------------------------------------------------
+# Public service functions
+# ---------------------------------------------------------------------------
+
+
+async def fetch_all_datasets(
+    page: int = 1,
+    page_size: int = 10,
+    search: Optional[str] = None,
+) -> DatasetListResponse:
+    """
+    Returns a paginated, optionally filtered list of datasets.
+
+    Args:
+        page:      1-indexed page number.
+        page_size: Number of items per page (max 100).
+        search:    Optional case-insensitive substring filter on title.
+    """
+    all_datasets = await _get_all_datasets()
+
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        all_datasets = [d for d in all_datasets if search_lower in d.title.lower()]
+
+    # Pagination calculations
+    total = len(all_datasets)
+    total_pages = max(1, math.ceil(total / page_size))
+
+    # Clamp page to valid range
+    page = max(1, min(page, total_pages))
+
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_datasets = all_datasets[start:end]
+
+    return DatasetListResponse(
+        pagination=PaginationMeta(
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        ),
+        datasets=page_datasets,
+    )
 
 
 def clear_cache() -> None:
