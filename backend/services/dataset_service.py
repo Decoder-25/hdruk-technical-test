@@ -36,7 +36,7 @@ def _extract_nested(raw: dict, *keys: str) -> Optional[str]:
     Returns the string value or None if any key is missing.
 
     Example:
-        _extract_nested(record, "summary", "title")
+        _extract_nested(record, "metadata", "summary", "title")
     """
     node = raw
     for key in keys:
@@ -50,35 +50,29 @@ def _parse_dataset(raw: dict) -> Optional[DatasetSummary]:
     """
     Map one raw JSON record to a DatasetSummary.
 
-    HDR UK Gateway metadata nests fields differently across schema versions;
-    this function handles the most common layouts gracefully.
+    Confirmed field paths from the actual HDR UK dataset JSON:
+      title                 -> raw["metadata"]["summary"]["title"]
+      description           -> raw["metadata"]["summary"]["description"]
+      accessServiceCategory -> raw["metadata"]["accessibility"]["access"]["accessServiceCategory"]
+      accessRights          -> raw["metadata"]["accessibility"]["access"]["accessRights"]
     """
     # --- title ---
-    title = (
-        _extract_nested(raw, "summary", "title")
-        or _extract_nested(raw, "title")
-    )
+    title = _extract_nested(raw, "metadata", "summary", "title")
     if not title:
         logger.warning("Skipping record with no title: %s", raw.get("id", "<unknown>"))
         return None
 
     # --- description ---
-    description = (
-        _extract_nested(raw, "summary", "abstract")
-        or _extract_nested(raw, "summary", "description")
-        or _extract_nested(raw, "description")
-    )
+    description = _extract_nested(raw, "metadata", "summary", "description")
 
     # --- accessServiceCategory ---
-    access_service_category = (
-        _extract_nested(raw, "accessibility", "access", "accessServiceCategory")
-        or _extract_nested(raw, "accessServiceCategory")
+    access_service_category = _extract_nested(
+        raw, "metadata", "accessibility", "access", "accessServiceCategory"
     )
 
     # --- accessRights ---
-    access_rights = (
-        _extract_nested(raw, "accessibility", "access", "accessRights")
-        or _extract_nested(raw, "accessRights")
+    access_rights = _extract_nested(
+        raw, "metadata", "accessibility", "access", "accessRights"
     )
 
     return DatasetSummary(
@@ -123,11 +117,10 @@ async def fetch_all_datasets() -> DatasetListResponse:
         raw_data = response.json()
         etag = response.headers.get("etag")
 
-    # The upstream JSON may be a list or wrapped in a key — handle both.
+    # The upstream JSON is a top-level array of dataset records.
     if isinstance(raw_data, list):
         raw_list = raw_data
     elif isinstance(raw_data, dict):
-        # Try common wrapper keys
         raw_list = (
             raw_data.get("datasets")
             or raw_data.get("data")
@@ -149,18 +142,6 @@ async def fetch_all_datasets() -> DatasetListResponse:
 
     return DatasetListResponse(count=len(datasets), datasets=datasets)
 
-
-async def fetch_dataset_by_title(title: str) -> Optional[DatasetSummary]:
-    """
-    Return a single DatasetSummary whose title matches (case-insensitive).
-    Returns None if not found.
-    """
-    response = await fetch_all_datasets()
-    title_lower = title.lower()
-    for dataset in response.datasets:
-        if dataset.title.lower() == title_lower:
-            return dataset
-    return None
 
 
 def clear_cache() -> None:

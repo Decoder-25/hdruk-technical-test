@@ -20,7 +20,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import dataset_router
+from routers.dataset_router import router as dataset_router
 
 # ---------------------------------------------------------------------------
 # Logging
